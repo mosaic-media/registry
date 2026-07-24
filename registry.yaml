@@ -29,8 +29,8 @@ repository:
 # index.
 modules:
   - repo: module-stremio-addons
-    version: v0.25.0
+    version: v0.25.2
   - repo: module-aiostreams
-    version: v0.4.0
+    version: v0.4.2
   - repo: module-fanart-tv
-    version: v0.4.1
+    version: v0.4.3
