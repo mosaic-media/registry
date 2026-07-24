@@ -1,0 +1,111 @@
+name: publish
+
+# Builds the signed module index from registry.yaml and deploys it to GitHub
+# Pages (ADR 0065). A Platform that trusts this repository fetches the result,
+# verifies its signature, and installs modules from it.
+#
+# This is the real shape of the publish, and it refuses loudly rather than
+# publishing something broken when its two prerequisites are absent:
+#
+#   1. REGISTRY_SIGNING_KEY — the base64 ed25519 private key that signs the
+#      index. Its public half is trusted by the Platform. Without it there is
+#      nothing to sign with and the run stops.
+#   2. Module binaries — each catalogued module must publish cross-compiled
+#      binaries in its own releases. A module that publishes only a Go module
+#      tag has no binary to point at, and the download step fails with that
+#      said plainly rather than emitting an index that lists an unreachable file.
+#
+# Until an extension module ships out-of-process binaries, registry.yaml lists
+# none and this workflow has nothing to publish — which is the honest state, not
+# a failure.
+
+on:
+  workflow_dispatch:
+  # A module release will dispatch here once modules produce binaries; wired now
+  # so the trigger exists before the producer does.
+  repository_dispatch:
+    types: [module-released]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  build-and-sign:
+    runs-on: ubuntu-latest
+    outputs:
+      empty: ${{ steps.assemble.outputs.empty }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # modulesign (build-index, sign-index, digest) lives in the platform repo
+      # and depends on its internal packages, so it is built from a platform
+      # checkout. This is the documented interim until the manifest/index format
+      # is extracted to a public module.
+      - name: Check out platform for the signing tool
+        uses: actions/checkout@v4
+        with:
+          repository: mosaic-media/platform
+          path: .platform
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: .platform/go.mod
+
+      - name: Build modulesign
+        run: |
+          cd .platform
+          go build -o "$GITHUB_WORKSPACE/modulesign" ./tools/modulesign
+
+      - name: Require the signing key
+        env:
+          KEY: ${{ secrets.REGISTRY_SIGNING_KEY }}
+        run: |
+          if [ -z "${KEY:-}" ]; then
+            echo "::error::REGISTRY_SIGNING_KEY is not set. Generate a key with" \
+                 "'modulesign genkey', store the private half here as the base64" \
+                 "REGISTRY_SIGNING_KEY secret, and trust the public half in the Platform." >&2
+            exit 1
+          fi
+
+      # Assemble a manifest per catalogued module by downloading its binaries and
+      # digesting them, then build-index over them. Emits empty=true when the
+      # catalogue is empty, which is a clean no-op rather than a failure.
+      - name: Assemble the index
+        id: assemble
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/assemble.sh
+
+      - name: Sign the index
+        if: steps.assemble.outputs.empty != 'true'
+        env:
+          KEY: ${{ secrets.REGISTRY_SIGNING_KEY }}
+        run: |
+          umask 077
+          printf '%s' "$KEY" | base64 -d > signing.key
+          ./modulesign sign-index -key signing.key out/index.json
+          rm -f signing.key
+          echo "--- published index ---"; ls -la out
+
+      - name: Upload the Pages artifact
+        if: steps.assemble.outputs.empty != 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build-and-sign
+    if: needs.build-and-sign.outputs.empty != 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

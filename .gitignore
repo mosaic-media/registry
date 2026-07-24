@@ -1,0 +1,6 @@
+# Workflow scratch — the built index, downloaded manifests, the tool binary.
+/out/
+/manifests/
+/modulesign
+/.platform/
+signing.key
