@@ -11,10 +11,11 @@ repository:
   # The public base URL a Platform fetches the index from. GitHub Pages for this
   # repository. The Platform appends /index.json and /index.json.sig.
   url: https://mosaic-media.github.io/registry
-  # The URL template each module binary is downloaded from, filled per module
-  # and platform. Points at the module's OWN GitHub release assets — the binary
-  # lives with the module, the signed catalogue lives here.
-  binary_url_template: "https://github.com/mosaic-media/module-{id}/releases/download/{version}/module-{id}-{os}-{arch}"
+  # No binary URL template here: a module's binary URLs live in its own
+  # manifest.json, which it publishes and which the registry only aggregates.
+  # The module knows where it hosts its bytes — its repository name need not
+  # match its module id — so the URL is its to declare, not the registry's to
+  # compute.
 
 # The catalogue. Empty until an extension module ships out-of-process binaries;
 # an entry here whose module publishes only a Go module tag has no binary to

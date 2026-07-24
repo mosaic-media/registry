@@ -49,6 +49,8 @@ These rules are identical in every Mosaic repository.
 
 - The one runnable check today is the empty-catalogue path of the publish
   workflow; it is a clean no-op and must stay one until a module ships binaries.
-- When something is undecided — the id/URL scheme for a module's binaries is the
-  live example — say so rather than inventing a convention that a real module
-  release then has to fight.
+- When something is undecided, say so rather than inventing a convention that a
+  real module release then has to fight. The id/URL scheme *was* that live
+  example and is now settled: a module's binary URLs live in its own
+  `manifest.json` (it knows its repo, which the registry does not), so the
+  registry only aggregates and signs — it computes no URLs.

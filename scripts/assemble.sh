@@ -15,12 +15,12 @@ set -euo pipefail
 
 python3 -m pip install --quiet pyyaml >/dev/null 2>&1 || true
 
-read -r REPO_URL TEMPLATE MODULE_COUNT < <(python3 - <<'PY'
+read -r REPO_URL MODULE_COUNT < <(python3 - <<'PY'
 import yaml
 c = yaml.safe_load(open("registry.yaml")) or {}
 repo = c.get("repository", {})
 mods = c.get("modules") or []
-print(repo.get("url", ""), repo.get("binary_url_template", ""), len(mods))
+print(repo.get("url", ""), len(mods))
 PY
 )
 
@@ -60,8 +60,8 @@ while IFS=$'\t' read -r id version; do
   fi
 done < /tmp/modules.tsv
 
-# build-index fills each binary's URL from the template and validates the result
-# parses before writing.
-./modulesign build-index -url "$TEMPLATE" -out out/index.json manifests/*.json
+# build-index wraps the manifests — which already carry their binaries' URLs and
+# digests — into the catalogue, and validates the result parses before writing.
+./modulesign build-index -out out/index.json manifests/*.json
 
 echo "empty=false" >> "$GITHUB_OUTPUT"
