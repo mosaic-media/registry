@@ -1,10 +1,10 @@
 # Mosaic's official extension-module registry — the source of truth for what the
 # published index (ADR 0065) contains.
 #
-# The publish workflow reads this, digests each module's release binaries,
-# builds a signed index, and deploys it to GitHub Pages. A module appears to
-# every Platform that trusts this repository the moment it lands here and the
-# index is republished.
+# The publish workflow reads this, downloads each catalogued module's own signed
+# manifest, builds a signed index over them, and deploys it to GitHub Pages. A
+# module appears to every Platform that trusts this repository the moment it
+# lands here and the index is republished.
 
 repository:
   name: mosaic-official
@@ -17,18 +17,20 @@ repository:
   # match its module id — so the URL is its to declare, not the registry's to
   # compute.
 
-# The catalogue. Empty until an extension module ships out-of-process binaries;
-# an entry here whose module publishes only a Go module tag has no binary to
-# point at, and the workflow refuses rather than publishing a broken index.
+# The catalogue. Each entry names the GitHub repository (under mosaic-media) that
+# publishes the module and the release tag to catalogue; the registry fetches
+# that release's manifest.json and the manifest is authoritative for everything
+# else — the module id, its roles, its binaries' URLs and digests. The repo is
+# named outright because it does not follow from the module id: the repository
+# module-stremio-addons publishes a module whose id is "stremio".
 #
-# The first real entry will be the Stremio addon source, which already has the
-# main.go that lets it run as its own process — it needs a release that
-# cross-compiles and signs binaries (host/v0.2.0-based), which is the change its
-# release.yml takes when it moves out of process.
-modules: []
-  # - id: stremio-addons
-  #   version: v0.24.0
-  # - id: aiostreams
+# A repo whose release publishes no manifest.json (a Go module tag alone) has no
+# binary to point at, and the workflow refuses rather than publishing a broken
+# index.
+modules:
+  - repo: module-stremio-addons
+    version: v0.24.0
+  # - repo: module-aiostreams
   #   version: v0.3.0
-  # - id: fanart-tv
+  # - repo: module-fanart-tv
   #   version: v0.3.0

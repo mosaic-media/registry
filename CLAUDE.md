@@ -8,10 +8,12 @@ the signed index a Platform installs extension modules from
 
 ## What this repo is, and is not
 
-- **It is a catalogue.** `registry.yaml` names the modules and versions in the
-  official set; CI turns that into a signed `index.json` on GitHub Pages. It
-  holds no module code and no binaries — those live in each module's own repo
-  and releases.
+- **It is a catalogue.** `registry.yaml` names the module *repositories* and
+  release versions in the official set; CI downloads each one's own signed
+  manifest and turns them into a signed `index.json` on GitHub Pages. It holds
+  no module code and no binaries — those live in each module's own repo and
+  releases. It names the repository rather than the module id because the two
+  differ: `module-stremio-addons` publishes a module whose id is `stremio`.
 - **It is not the trust root by itself.** The index is signed with one ed25519
   key. The private half is the `REGISTRY_SIGNING_KEY` secret here; the public
   half is trusted by the Platform. GitHub is an *untrusted* host — the signature
@@ -47,10 +49,14 @@ These rules are identical in every Mosaic repository.
 
 ## Working expectations
 
-- The one runnable check today is the empty-catalogue path of the publish
-  workflow; it is a clean no-op and must stay one until a module ships binaries.
+- The catalogue now has its first real entry (`module-stremio-addons@v0.24.0`),
+  so the publish workflow's non-empty path runs for real: it fetches that
+  release's manifest and builds a signed index. The empty-catalogue no-op path
+  remains and must stay a clean no-op.
 - When something is undecided, say so rather than inventing a convention that a
   real module release then has to fight. The id/URL scheme *was* that live
   example and is now settled: a module's binary URLs live in its own
-  `manifest.json` (it knows its repo, which the registry does not), so the
+  `manifest.json` (it knows where it hosts its bytes; the registry never
+  computes a URL), and the catalogue names the *repository* to fetch that
+  manifest from — since a repo name does not follow from a module id — so the
   registry only aggregates and signs — it computes no URLs.

@@ -3,11 +3,16 @@
 #
 # The model is aggregation, not construction: each catalogued module publishes
 # its OWN manifest.json in its release — id, version, name, SDK major, roles and
-# its binaries' digests, produced by the module's CI with the Platform's
-# modulesign tool. This script downloads those manifests and runs build-index
-# over them, so the registry never re-derives a module's properties or re-hashes
-# its bytes. The one thing it adds is the download URL per binary, from the
-# template in registry.yaml.
+# its binaries' digests AND their download URLs, produced by the module's CI with
+# the Platform's modulesign tool. This script downloads those manifests and runs
+# build-index over them, so the registry never re-derives a module's properties,
+# re-hashes its bytes, or computes a URL. It adds nothing to a manifest; it only
+# aggregates and (in publish.yml) signs.
+#
+# The one thing the catalogue must supply that a manifest cannot is *where to
+# fetch that manifest from*: a module's repository name is not its module id
+# (module-stremio-addons publishes a module whose id is "stremio"), so the id
+# cannot locate the repo. Each entry therefore names its repository outright.
 #
 # The empty catalogue is the current, expected state — no extension module ships
 # out-of-process binaries yet — and it is a clean no-op, not a failure.
@@ -39,21 +44,20 @@ fi
 # orchestration.
 mkdir -p manifests out
 
-# Emit each module as "repo<TAB>version"; repo is the module-<suffix> repository,
-# which is where its manifest and binaries are released.
+# Emit each module as "repo<TAB>version"; repo is the GitHub repository (under
+# mosaic-media) that publishes its manifest and binaries as release assets.
 python3 - <<'PY' > /tmp/modules.tsv
 import yaml
 c = yaml.safe_load(open("registry.yaml"))
 for m in c["modules"]:
-    print(f'{m["id"]}\t{m["version"]}')
+    print(f'{m["repo"]}\t{m["version"]}')
 PY
 
-while IFS=$'\t' read -r id version; do
-  repo="mosaic-media/module-${id}"
-  manifest_url="https://github.com/${repo}/releases/download/${version}/manifest.json"
-  echo "fetching manifest for ${id}@${version}"
-  if ! curl -fsSL "$manifest_url" -o "manifests/${id}.json"; then
-    echo "::error::${id}@${version} publishes no manifest.json at ${manifest_url}." >&2
+while IFS=$'\t' read -r repo version; do
+  manifest_url="https://github.com/mosaic-media/${repo}/releases/download/${version}/manifest.json"
+  echo "fetching manifest from ${repo}@${version}"
+  if ! curl -fsSL "$manifest_url" -o "manifests/${repo}.json"; then
+    echo "::error::${repo}@${version} publishes no manifest.json at ${manifest_url}." >&2
     echo "An extension module must ship a signed manifest and binaries in its release" >&2
     echo "before it can be catalogued; a Go module tag alone is not enough." >&2
     exit 1
