@@ -30,7 +30,7 @@ repository:
 modules:
   - repo: module-stremio-addons
     version: v0.24.0
-  # - repo: module-aiostreams
-  #   version: v0.3.0
-  # - repo: module-fanart-tv
-  #   version: v0.3.0
+  - repo: module-aiostreams
+    version: v0.3.0
+  - repo: module-fanart-tv
+    version: v0.3.0
