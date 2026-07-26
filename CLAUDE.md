@@ -23,12 +23,18 @@ the signed index a Platform installs extension modules from
 
 - **The private signing key never lands in the repository.** It is a CI secret,
   base64-encoded, and the workflow shreds its decoded copy after signing.
-- **A module is catalogued only once it ships out-of-process binaries.** Today
-  the extension modules publish a Go module tag and are composed into the
-  Platform binary; they cannot be in the index until their release produces
-  cross-compiled, signed binaries and a `manifest.json`. The publish workflow
+- **A module is catalogued only once it ships out-of-process binaries.** All
+  three extension modules do — their releases carry cross-compiled binaries and
+  a `manifest.json` — but the rule is what governs a fourth. The publish workflow
   refuses to catalogue a module with no downloadable binary rather than emit a
-  broken index.
+  broken index, and the bump job makes the same check before it will move an
+  entry, so the refusal lands on the dispatch that caused it rather than on
+  every publish afterwards.
+- **A dispatch moves an entry; it never adds one.** `publish.yml`'s `bump` job
+  refuses a repository that is not already in `registry.yaml`. Enrolling in the
+  official set is the ADR 0065 trust decision — one key vouches for everything
+  the index carries — and a repository must not be able to make that decision on
+  its own behalf. Adding a module is a deliberate edit here, by a person.
 - **`modulesign` is built from a `platform` checkout** because it depends on the
   Platform's internal packages today. Extracting the manifest/index format to a
   public module is a deliberate later decision, noted in `README.md`, not a
@@ -49,10 +55,18 @@ These rules are identical in every Mosaic repository.
 
 ## Working expectations
 
-- The catalogue now has its first real entry (`module-stremio-addons@v0.24.0`),
-  so the publish workflow's non-empty path runs for real: it fetches that
-  release's manifest and builds a signed index. The empty-catalogue no-op path
-  remains and must stay a clean no-op.
+- **The catalogue is not edited by hand any more, and that is the point.** A
+  module's release dispatches `module-released`, the `bump` job moves its version
+  by pull request, and the merge is what republishes the index — so `publish.yml`
+  triggers on a push to `main` touching `registry.yaml`. Hand-curation is what
+  left the catalogue three releases stale for two days with nothing red anywhere,
+  because a stale catalogue publishes a perfectly valid signed index that simply
+  offers old versions. If you find yourself editing a version in `registry.yaml`,
+  ask first whether the dispatch chain is broken — that is the actual defect.
+- **Adding or removing a module is still a hand edit**, and the only one. See the
+  non-negotiable facts above for why.
+- The empty-catalogue path in `assemble.sh` remains and must stay a clean no-op,
+  even though nothing reaches it now.
 - When something is undecided, say so rather than inventing a convention that a
   real module release then has to fight. The id/URL scheme *was* that live
   example and is now settled: a module's binary URLs live in its own

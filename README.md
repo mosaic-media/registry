@@ -18,45 +18,69 @@ an untrusted host here** — the signature and per-binary digests protect a
 download, not the host — which is exactly why static hosting is enough.
 
 ```
-registry.yaml  ──(CI: build-index + sign-index)──▶  index.json + index.json.sig
-     │                                                        │
-     │ names modules + versions                               │ published to GitHub Pages
-     ▼                                                        ▼
-module release binaries  ◀───── the Platform downloads, verifies, spawns ─────  Platform
-   (in each module's own GitHub Releases)                    (gRPC over a Unix socket)
+a module release ──(dispatch: module-released)──▶  registry.yaml  (bumped by PR)
+                                                         │
+                                 (CI: build-index + sign-index) │ on merge to main
+                                                         ▼
+                                              index.json + index.json.sig
+     │                                                   │
+     │ names repositories + versions                     │ published to GitHub Pages
+     ▼                                                   ▼
+module release binaries  ◀──── the Platform downloads, verifies, spawns ────  Platform
+   (in each module's own GitHub Releases)                  (gRPC over a Unix socket)
 ```
 
 ## How it works
 
-- **`registry.yaml`** is the source of truth: which modules, at which versions,
-  belong in the official catalogue.
-- **`.github/workflows/publish.yml`** turns that into a signed index: it digests
-  each module's release binaries, assembles a manifest per module, runs
-  `build-index` and `sign-index`, and deploys the result to Pages. The binaries
-  themselves stay in each module's own releases and are referenced by URL.
+- **`registry.yaml`** is the source of truth: which module repositories, at which
+  versions, belong in the official catalogue. It names the *repository* rather
+  than the module id, because the two differ — `module-stremio-addons` publishes
+  a module whose id is `stremio` — and only the repository locates the release to
+  fetch a manifest from.
+- **`.github/workflows/publish.yml`** turns that into a signed index: it
+  downloads each catalogued release's own `manifest.json`, runs `build-index`
+  and `sign-index` over them, and deploys the result to Pages. The binaries
+  themselves stay in each module's own releases and are referenced by URL. The
+  registry aggregates and signs; it computes nothing.
 - The index is signed with **one ed25519 key** — the official repository key.
-  Its public half is trusted by the Platform by default; its private half is a
-  CI secret here and nowhere else.
+  Its public half is trusted by the Platform by default; its private half is the
+  `REGISTRY_SIGNING_KEY` CI secret here and nowhere else.
 
-## What it is waiting on
+## The catalogue moves itself
 
-This is scaffolding, and it is honest about that. Publishing a real index needs
-two things that do not exist yet:
+A module's release dispatches `module-released` here once it has uploaded its
+binaries and its `manifest.json`, and `publish.yml`'s `bump` job moves that
+module's version in `registry.yaml` by opening a pull request. Merging is what
+republishes: `registry.yaml` is the index's only input, so a change to it on
+`main` triggers the publish.
 
-1. **The signing key.** Generate it with the Platform's tool —
-   `go run ./tools/modulesign genkey -out mosaic-official.key` in the `platform`
-   checkout — store the private half as this repo's `REGISTRY_SIGNING_KEY`
-   secret (base64), and trust the public half in the Platform. The private key
-   is the trust anchor for the whole extension ecosystem; treat it accordingly,
-   and prefer a KMS over a raw secret once past the prototype.
-2. **Extension modules that produce binaries.** Today the extension modules
-   (`module-stremio-addons`, `module-aiostreams`, `module-fanart-tv`) are still
-   composed *into* the Platform binary and publish only a Go module tag. The
-   registry catalogues *out-of-process* modules — cross-compiled, signed
-   binaries — so each must first switch its release to produce those (the shape
-   its `release.yml` changes to when it moves out of process). Until then, this
-   registry has nothing real to publish, and the workflow says so rather than
-   inventing an entry.
+The reason it is automated rather than remembered is that **forgetting is
+silent**. Hand-curation left the catalogue three releases behind on all three
+modules for two days, and nothing anywhere went red, because a stale catalogue
+publishes a perfectly valid, correctly signed index — it just offers versions
+nobody released. The only visible symptom is a user installing an old module.
+
+A dispatch can only ever **move** an entry. A repository that is not already
+catalogued is refused, because enrolling in the official set is the trust
+decision this whole repository is about — one key vouches for everything the
+index carries — and a repository must not be able to make that decision on its
+own behalf. Adding a module stays a deliberate edit to `registry.yaml`.
+
+Two secrets carry it: `REGISTRY_DISPATCH_TOKEN` (on the modules, org-wide) to
+send the dispatch, and `CATALOGUE_BUMP_TOKEN` here to open and merge the pull
+request. The second must be a PAT rather than the default `github.token`,
+because a merge performed by `github.token` raises no further workflow run — the
+catalogue would move and the index would stay exactly as stale as before.
+
+## The signing key
+
+It exists and the index is signed with it. Generating or rotating one is the
+Platform's tool — `go run ./tools/modulesign genkey -out mosaic-official.key` in
+a `platform` checkout — with the private half stored here as the base64
+`REGISTRY_SIGNING_KEY` secret and the public half trusted in the Platform. **It
+is the trust anchor for the whole extension ecosystem**: treat it accordingly,
+and prefer a KMS over a raw secret once past the prototype. Rotating it means
+re-trusting the public half in the Platform first, or every install breaks.
 
 ## A known interim
 
