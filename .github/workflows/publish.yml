@@ -1,11 +1,24 @@
 name: publish
 
-# Builds the signed module index from registry.yaml and deploys it to GitHub
-# Pages (ADR 0065). A Platform that trusts this repository fetches the result,
-# verifies its signature, and installs modules from it.
+# Two halves of one chain live here, because `registry.yaml` is what joins them:
+# a module's release moves its entry, and the entry is what gets published.
 #
-# This is the real shape of the publish, and it refuses loudly rather than
-# publishing something broken when its two prerequisites are absent:
+#   `bump` — a module's release.yml dispatches `module-released` once its
+#   binaries and manifest.json are uploaded, and this moves that module's version
+#   in registry.yaml by opening a pull request. Before it existed the catalogue
+#   was hand-curated, and hand-curation drifted silently: it sat three releases
+#   behind all three modules for two days, and nothing anywhere went red, because
+#   a stale catalogue publishes a perfectly valid index — it just offers a version
+#   nobody released today. Nothing else notices, which is why this is automated
+#   rather than remembered.
+#
+#   `build-and-sign` + `deploy` — build the signed module index from
+#   registry.yaml and deploy it to GitHub Pages (ADR 0065). A Platform that
+#   trusts this repository fetches the result, verifies its signature, and
+#   installs modules from it.
+#
+# The publish refuses loudly rather than publishing something broken when its two
+# prerequisites are absent:
 #
 #   1. REGISTRY_SIGNING_KEY — the base64 ed25519 private key that signs the
 #      index. Its public half is trusted by the Platform. Without it there is
@@ -15,16 +28,24 @@ name: publish
 #      tag has no binary to point at, and the download step fails with that
 #      said plainly rather than emitting an index that lists an unreachable file.
 #
-# Until an extension module ships out-of-process binaries, registry.yaml lists
-# none and this workflow has nothing to publish — which is the honest state, not
-# a failure.
+# An empty catalogue remains a clean no-op rather than a failure, which is what
+# it was for as long as no module shipped out-of-process binaries.
 
 on:
   workflow_dispatch:
-  # A module release will dispatch here once modules produce binaries; wired now
-  # so the trigger exists before the producer does.
+  # A module's release dispatches this once its binaries and manifest.json are on
+  # the release — see `bump`, which is the only job it runs.
   repository_dispatch:
     types: [module-released]
+  # The merged bump is what republishes. The catalogue is the index's only input,
+  # so a change to it on main is exactly the event that dates the published
+  # index; without this the bump would land and the index would stay stale, which
+  # is the failure the bump exists to remove. workflow_dispatch stays for a
+  # republish with no catalogue change — a rotated key, a re-run after a failed
+  # deploy.
+  push:
+    branches: [main]
+    paths: [registry.yaml]
 
 permissions:
   contents: read
@@ -32,11 +53,208 @@ permissions:
   id-token: write
 
 concurrency:
-  group: publish
+  # Two shapes of run, serialised separately. Two bumps at once would each open a
+  # pull request against a registry.yaml the other is also editing, and the
+  # second to merge would conflict; one at a time is slower and always correct.
+  # Two publishes at once is the same race against one Pages deployment. They do
+  # not block each other, because a bump run publishes nothing and a publish run
+  # edits nothing.
+  group: ${{ github.event_name == 'repository_dispatch' && 'catalogue-bump' || 'publish' }}
   cancel-in-progress: false
 
 jobs:
+  # Moving an entry, not adding one. Everything below is about keeping a dispatch
+  # from being able to do more than move a version this repository already
+  # deliberately catalogues.
+  bump:
+    if: github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Checked before the checkout that would use it, so an unset token reads as
+      # the configuration error it is rather than as a git failure. It is a
+      # separate secret from the signing key and needs no access to it.
+      #
+      # A PAT rather than the default github.token, for a reason particular to
+      # this repository: a merge performed by github.token raises no further
+      # workflow run, so the pull request would merge and the `push` trigger
+      # above would never fire — the catalogue would move and the published index
+      # would stay exactly as stale as before.
+      - name: Require the bump token
+        env:
+          TOKEN: ${{ secrets.CATALOGUE_BUMP_TOKEN }}
+        run: |
+          if [ -z "${TOKEN:-}" ]; then
+            echo "::error::CATALOGUE_BUMP_TOKEN is not set — nothing was catalogued." \
+                 "Store a token with 'repo' scope on this repository as CATALOGUE_BUMP_TOKEN," \
+                 "or move the entry in registry.yaml by hand." >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.CATALOGUE_BUMP_TOKEN }}
+
+      # The payload arrives from another repository, so it is input rather than
+      # fact. Three checks, in order of what they prevent.
+      - name: Validate the dispatch payload
+        env:
+          REPO: ${{ github.event.client_payload.repo }}
+          VERSION: ${{ github.event.client_payload.version }}
+        run: |
+          python3 -m pip install --quiet pyyaml >/dev/null 2>&1 || true
+
+          # The payload names a repository, not a module id, because that is what
+          # the catalogue is keyed on — a repo name does not follow from an id
+          # (module-stremio-addons publishes a module whose id is "stremio").
+          if ! printf '%s' "$REPO" | grep -Eq '^module-[a-z0-9-]+$'; then
+            echo "::error::refusing repository '$REPO'" >&2
+            exit 1
+          fi
+          if ! printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::refusing version '$VERSION' — not vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+
+          # This is the load-bearing one: the repository must ALREADY be in the
+          # catalogue. It means a dispatch can only ever move an entry this
+          # repository has taken deliberately, never add one — and adding a
+          # module to the official set is the trust decision the whole of ADR
+          # 0065 is about, since one key vouches for everything the index carries.
+          # A repository that could enrol itself by dispatch would make that
+          # decision on its own behalf.
+          python3 - <<'PY' > current.txt
+          import os, yaml
+
+          repo = os.environ["REPO"]
+          for m in yaml.safe_load(open("registry.yaml"))["modules"]:
+              if m["repo"] == repo:
+                  print(m["version"])
+                  break
+          PY
+          current=$(cat current.txt)
+          rm -f current.txt
+
+          if [ -z "$current" ]; then
+            echo "::error::$REPO is not catalogued in registry.yaml." >&2
+            echo "Adding a module to the official catalogue is a deliberate change, not a dispatch." >&2
+            exit 1
+          fi
+
+          {
+            echo "repo=$REPO"
+            echo "version=$VERSION"
+            echo "current=$current"
+          } >> "$GITHUB_ENV"
+
+      # A re-run of a module's release, or a dispatch that lost a race with a
+      # hand-made edit, arrives at a catalogue already saying what it came to
+      # say. That is a no-op, not a conflict, and it must not open an empty
+      # pull request.
+      - name: Skip if already catalogued at that version
+        run: |
+          if [ "$current" = "$version" ]; then
+            echo "already catalogued at $version — nothing to do"
+            echo "skip=true" >> "$GITHUB_ENV"
+          fi
+
+      # assemble.sh makes this same check, but it makes it *after* a merge — so a
+      # release whose assets never appeared would move the catalogue, and then
+      # every publish from that moment on would fail until somebody edited
+      # registry.yaml back. Checking here keeps the failure attached to the
+      # dispatch that caused it, and it is the check that catches the mistake
+      # this chain is most prone to: a module dispatching before its `binaries`
+      # job has uploaded anything.
+      - name: Check the release publishes a manifest
+        if: env.skip != 'true'
+        run: |
+          url="https://github.com/mosaic-media/${repo}/releases/download/${version}/manifest.json"
+          if ! curl -fsSL "$url" -o /dev/null; then
+            echo "::error::${repo}@${version} publishes no manifest.json at ${url}." >&2
+            echo "A release is catalogued by downloading its manifest; dispatch after the job" >&2
+            echo "that uploads it, not after the one that creates the release." >&2
+            exit 1
+          fi
+
+      - name: Move the entry to the released version
+        if: env.skip != 'true'
+        run: |
+          # A targeted line edit rather than a YAML round-trip. registry.yaml is
+          # mostly comments — what the catalogue is, why it names a repository
+          # rather than an id — and loading and dumping it through any YAML
+          # library drops every one of them, which turns a one-line bump into a
+          # diff nobody can review.
+          awk -v repo="$repo" -v version="$version" '
+            $0 ~ "^[[:space:]]*-[[:space:]]+repo:[[:space:]]+" repo "[[:space:]]*$" { hit = 1 }
+            hit && $0 ~ "^[[:space:]]*version:" { sub(/version:.*/, "version: " version); hit = 0 }
+            { print }
+          ' registry.yaml > registry.yaml.new
+          mv registry.yaml.new registry.yaml
+
+          # Two proofs that the edit did what it says, because a text edit to a
+          # structured file can go wrong quietly: the file still parses and now
+          # says what the payload asked for, and exactly one line moved — an
+          # entry matched twice, or a stray `version:` picked up in between,
+          # would show up here rather than in the index.
+          python3 - <<'PY'
+          import os, sys, yaml
+
+          repo, version = os.environ["repo"], os.environ["version"]
+          catalogued = {m["repo"]: m["version"] for m in yaml.safe_load(open("registry.yaml"))["modules"]}
+          if catalogued.get(repo) != version:
+              sys.exit(f"::error::the edit did not take — {repo} is {catalogued.get(repo)}, not {version}")
+          PY
+
+          counts=$(git diff --numstat -- registry.yaml | awk '{print $1"+"$2}')
+          if [ "$counts" != "1+1" ]; then
+            echo "::error::expected one line changed in registry.yaml, got '${counts:-no change}'" >&2
+            exit 1
+          fi
+          git --no-pager diff -- registry.yaml
+
+      # A pull request rather than a push to main, for the reason platform's
+      # core-module-bump.yml gives: it leaves a record of which module release
+      # moved which catalogue entry, which is most of the diagnosis the first
+      # time a bump is wrong. Auto-merge keeps it from needing a person in the
+      # ordinary case, and leaves the seam where a check on the pull request
+      # would go if this repository ever grows one.
+      - name: Open the pull request
+        if: env.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.CATALOGUE_BUMP_TOKEN }}
+        run: |
+          branch="catalogue/${repo}-${version}"
+          git config user.name "AdamNi-7080"
+          git config user.email "anicholls41@gmail.com"
+          git checkout -b "$branch"
+          git add registry.yaml
+          git commit -m "$(printf '%s\n\n%s\n\n%s' \
+            "Catalogue ${repo} at ${version}" \
+            "Dispatched by ${repo}'s release workflow once the release carried the binaries and the manifest.json the index is built from (ADR 0065)." \
+            "Previously catalogued: ${current}.")"
+          git push origin "$branch"
+
+          gh pr create \
+            --title "Catalogue ${repo} at ${version}" \
+            --body "$(printf '%s\n\n%s\n\n%s' \
+              "Automated catalogue bump: \`${current}\` → \`${version}\` (ADR 0065)." \
+              "Dispatched by [\`${repo}\`](https://github.com/mosaic-media/${repo}/releases/tag/${version}) after its release published the cross-compiled binaries and the \`manifest.json\` this index is assembled from." \
+              "Merging republishes the signed index from the new catalogue.")" \
+            --base main \
+            --head "$branch"
+
+          # Auto-merge has to be enabled on the repository, and it is not the
+          # bump that should fail when it is not: the pull request is open and
+          # the work is done, so a red run here would report the opposite of
+          # what happened. Say what is waiting instead.
+          if ! gh pr merge "$branch" --auto --squash; then
+            echo "::warning::auto-merge is not enabled on this repository — the pull request is open and needs a human to merge it, which is what republishes the index."
+          fi
+
   build-and-sign:
+    if: github.event_name != 'repository_dispatch'
     runs-on: ubuntu-latest
     outputs:
       empty: ${{ steps.assemble.outputs.empty }}
