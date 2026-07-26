@@ -4,3 +4,6 @@
 /modulesign
 /.platform/
 signing.key
+
+# Editor and IDE state
+.idea/
