@@ -9,11 +9,14 @@ the signed index a Platform installs extension modules from
 ## What this repo is, and is not
 
 - **It is a catalogue.** `registry.yaml` names the module *repositories* and
-  release versions in the official set; CI downloads each one's own signed
-  manifest and turns them into a signed `index.json` on GitHub Pages. It holds
-  no module code and no binaries — those live in each module's own repo and
-  releases. It names the repository rather than the module id because the two
-  differ: `module-stremio-addons` publishes a module whose id is `stremio`.
+  release versions in the official set; CI downloads each one's own manifest —
+  **unsigned**, since a module signs nothing: `modulesign build-manifest` emits
+  it carrying each binary's digest, and the index signature is what authenticates
+  the manifest and those digests — and turns them into a signed `index.json` on
+  GitHub Pages. It holds no module code and no binaries — those live in each
+  module's own repo and releases. It names the repository rather than the module
+  id because the two differ: `module-stremio-addons` publishes a module whose id
+  is `stremio`.
 - **It is not the trust root by itself.** The index is signed with one ed25519
   key. The private half is the `REGISTRY_SIGNING_KEY` secret here; the public
   half is trusted by the Platform. GitHub is an *untrusted* host — the signature

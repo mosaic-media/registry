@@ -14,8 +14,10 @@
 # (module-stremio-addons publishes a module whose id is "stremio"), so the id
 # cannot locate the repo. Each entry therefore names its repository outright.
 #
-# The empty catalogue is the current, expected state — no extension module ships
-# out-of-process binaries yet — and it is a clean no-op, not a failure.
+# The empty catalogue is a clean no-op rather than a failure. It is no longer the
+# expected state: all three extension modules ship out-of-process binaries and
+# are catalogued, so nothing reaches that branch today. It stays because a
+# catalogue emptied deliberately must publish an empty index rather than fail.
 set -euo pipefail
 
 python3 -m pip install --quiet pyyaml >/dev/null 2>&1 || true
@@ -30,18 +32,20 @@ PY
 )
 
 if [ "${MODULE_COUNT:-0}" -eq 0 ]; then
-  echo "registry.yaml lists no modules — nothing to publish."
-  echo "This is the expected state until an extension module ships out-of-process"
-  echo "binaries; see README.md."
+  echo "registry.yaml lists no modules — publishing an empty index."
+  echo "That is a clean no-op, not a failure, but it is no longer the expected"
+  echo "state: the catalogue normally lists every extension module. If you did"
+  echo "not empty it deliberately, check what removed the entries; see README.md."
   echo "empty=true" >> "$GITHUB_OUTPUT"
   exit 0
 fi
 
 # ── Non-empty path ──────────────────────────────────────────────────────────
-# Reached only once a module publishes binaries; untested until one does,
-# because there is nothing real to download. It glues tools that are themselves
-# tested (modulesign build-index/sign-index), so the risk is confined to this
-# orchestration.
+# This is the live path — every publish takes it, since the catalogue has three
+# modules in it. It glues tools that are themselves tested (modulesign
+# build-index/sign-index), so the risk is confined to this orchestration; what
+# has no test of its own is the orchestration, and a publish is what exercises
+# it.
 mkdir -p manifests out
 
 # Emit each module as "repo<TAB>version"; repo is the GitHub repository (under
@@ -58,8 +62,11 @@ while IFS=$'\t' read -r repo version; do
   echo "fetching manifest from ${repo}@${version}"
   if ! curl -fsSL "$manifest_url" -o "manifests/${repo}.json"; then
     echo "::error::${repo}@${version} publishes no manifest.json at ${manifest_url}." >&2
-    echo "An extension module must ship a signed manifest and binaries in its release" >&2
+    echo "An extension module must ship a manifest.json and its binaries in its release" >&2
     echo "before it can be catalogued; a Go module tag alone is not enough." >&2
+    echo "The manifest is not signed by the module — 'modulesign build-manifest' emits" >&2
+    echo "it unsigned, carrying each binary's digest, and the index signature over it" >&2
+    echo "is what authenticates both (ADR 0065)." >&2
     exit 1
   fi
 done < /tmp/modules.tsv
