@@ -2,8 +2,8 @@
 
 This repository is Mosaic's **official extension-module registry**: it publishes
 the signed index a Platform installs extension modules from
-([ADR 0065](https://github.com/mosaic-media/architecture/blob/main/docs/adr/0065-module-distribution-and-trust.md),
-[ADR 0079](https://github.com/mosaic-media/architecture/blob/main/docs/adr/0079-the-platform-manages-extension-modules.md)).
+([platform#40](https://github.com/mosaic-media/platform/blob/main/docs/adr/0040-module-distribution-and-trust.md),
+[platform#49](https://github.com/mosaic-media/platform/blob/main/docs/adr/0049-the-platform-manages-extension-modules.md)).
 `README.md` is the working description; read it first.
 
 ## What this repo is, and is not
@@ -35,7 +35,7 @@ the signed index a Platform installs extension modules from
   every publish afterwards.
 - **A dispatch moves an entry; it never adds one.** `publish.yml`'s `bump` job
   refuses a repository that is not already in `registry.yaml`. Enrolling in the
-  official set is the ADR 0065 trust decision — one key vouches for everything
+  official set is the [platform#40](https://github.com/mosaic-media/platform/blob/main/docs/adr/0040-module-distribution-and-trust.md) trust decision — one key vouches for everything
   the index carries — and a repository must not be able to make that decision on
   its own behalf. Adding a module is a deliberate edit here, by a person.
 - **`modulesign` is built from a `platform` checkout** because it depends on the

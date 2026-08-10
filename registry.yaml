@@ -1,5 +1,5 @@
 # Mosaic's official extension-module registry — the source of truth for what the
-# published index (ADR 0065) contains.
+# published index (platform#40) contains.
 #
 # The publish workflow reads this, downloads each catalogued module's own
 # manifest — unsigned; the index signature over it is what authenticates the

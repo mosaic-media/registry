@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Assemble the module index from registry.yaml (ADR 0065).
+# Assemble the module index from registry.yaml (platform#40).
 #
 # The model is aggregation, not construction: each catalogued module publishes
 # its OWN manifest.json in its release — id, version, name, SDK major, roles and
@@ -66,7 +66,7 @@ while IFS=$'\t' read -r repo version; do
     echo "before it can be catalogued; a Go module tag alone is not enough." >&2
     echo "The manifest is not signed by the module — 'modulesign build-manifest' emits" >&2
     echo "it unsigned, carrying each binary's digest, and the index signature over it" >&2
-    echo "is what authenticates both (ADR 0065)." >&2
+    echo "is what authenticates both (platform#40)." >&2
     exit 1
   fi
 done < /tmp/modules.tsv

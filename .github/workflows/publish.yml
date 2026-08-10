@@ -13,7 +13,7 @@ name: publish
 #   rather than remembered.
 #
 #   `build-and-sign` + `deploy` — build the signed module index from
-#   registry.yaml and deploy it to GitHub Pages (ADR 0065). A Platform that
+#   registry.yaml and deploy it to GitHub Pages (platform#40). A Platform that
 #   trusts this repository fetches the result, verifies its signature, and
 #   installs modules from it.
 #
@@ -232,14 +232,14 @@ jobs:
           git add registry.yaml
           git commit -m "$(printf '%s\n\n%s\n\n%s' \
             "Catalogue ${repo} at ${version}" \
-            "Dispatched by ${repo}'s release workflow once the release carried the binaries and the manifest.json the index is built from (ADR 0065)." \
+            "Dispatched by ${repo}'s release workflow once the release carried the binaries and the manifest.json the index is built from (platform#40)." \
             "Previously catalogued: ${current}.")"
           git push origin "$branch"
 
           gh pr create \
             --title "Catalogue ${repo} at ${version}" \
             --body "$(printf '%s\n\n%s\n\n%s' \
-              "Automated catalogue bump: \`${current}\` → \`${version}\` (ADR 0065)." \
+              "Automated catalogue bump: \`${current}\` → \`${version}\` (platform#40)." \
               "Dispatched by [\`${repo}\`](https://github.com/mosaic-media/${repo}/releases/tag/${version}) after its release published the cross-compiled binaries and the \`manifest.json\` this index is assembled from." \
               "Merging republishes the signed index from the new catalogue.")" \
             --base main \

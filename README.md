@@ -2,9 +2,9 @@
 
 Mosaic's **official extension-module registry**: the signed index a Platform
 fetches to discover and install extension modules
-([ADR 0065](https://github.com/mosaic-media/architecture/blob/main/docs/adr/0065-module-distribution-and-trust.md),
+([platform#40](https://github.com/mosaic-media/platform/blob/main/docs/adr/0040-module-distribution-and-trust.md),
 managed by the Platform per
-[ADR 0079](https://github.com/mosaic-media/architecture/blob/main/docs/adr/0079-the-platform-manages-extension-modules.md)).
+[platform#49](https://github.com/mosaic-media/platform/blob/main/docs/adr/0049-the-platform-manages-extension-modules.md)).
 
 ## What this is, in one paragraph
 
