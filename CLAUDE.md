@@ -25,36 +25,28 @@ the signed index a Platform installs extension modules from
 ## Non-negotiable facts
 
 - **The private signing key never lands in the repository.** It is a CI secret,
-  base64-encoded, and the workflow shreds its decoded copy after signing.
-- **A module is catalogued only once it ships out-of-process binaries.** All
-  three extension modules do — their releases carry cross-compiled binaries and
-  a `manifest.json` — but the rule is what governs a fourth. The publish workflow
-  refuses to catalogue a module with no downloadable binary rather than emit a
-  broken index, and the bump job makes the same check before it will move an
-  entry, so the refusal lands on the dispatch that caused it rather than on
-  every publish afterwards.
+  base64-encoded, and the workflow removes its decoded copy immediately after
+  signing.
+- **A module is catalogued only once it ships out-of-process binaries.** The
+  publish workflow refuses to catalogue a module whose release publishes no
+  downloadable `manifest.json`, rather than emit a broken index, and the `bump`
+  job makes the same check before it will move an entry — so the refusal lands on
+  the dispatch that caused it rather than on every publish afterwards. **Whether
+  a given module ships binaries is that module's fact, not this repository's**:
+  the rule is what governs the next one.
 - **A dispatch moves an entry; it never adds one.** `publish.yml`'s `bump` job
   refuses a repository that is not already in `registry.yaml`. Enrolling in the
-  official set is the [platform#40](https://github.com/mosaic-media/platform/blob/main/docs/adr/0040-module-distribution-and-trust.md) trust decision — one key vouches for everything
-  the index carries — and a repository must not be able to make that decision on
-  its own behalf. Adding a module is a deliberate edit here, by a person.
-- **`modulesign` is built from a `platform` checkout** because it depends on the
-  Platform's internal packages today. Extracting the manifest/index format to a
-  public module is a deliberate later decision, noted in `README.md`, not a
-  thing to work around silently here.
-
-## The roadmap and the decision records
-
-These rules are identical in every Mosaic repository.
-
-- **The roadmap is maintained, not consulted.** `docs/roadmap.md` in
-  [`architecture`](https://github.com/mosaic-media/architecture) is the single
-  record of where the build is, for every repository. A change here that dates
-  it is a change to the roadmap, in the same session.
-- **Decision records are append-only** and live only in `architecture/docs/adr/`.
-  If the registry's shape changes a recorded decision, that is a new ADR, not an
-  edit to an old one.
-- **Commit author identity** must be `AdamNi-7080 <anicholls41@gmail.com>`.
+  official set is the
+  [platform#40](https://github.com/mosaic-media/platform/blob/main/docs/adr/0040-module-distribution-and-trust.md)
+  trust decision — one key vouches for everything the index carries — and a
+  repository must not be able to make that decision on its own behalf. Adding a
+  module is a deliberate edit here, by a person.
+- **`modulesign` is not built from this repository.** `publish.yml` checks out
+  [`platform`](https://github.com/mosaic-media/platform) and builds
+  `./tools/modulesign` from it, because the tool depends on that repository's
+  internal packages. Extracting the manifest and index format to a public module
+  is a deliberate later decision, noted in `README.md` — not a thing to work
+  around silently here.
 
 ## Working expectations
 
@@ -71,9 +63,28 @@ These rules are identical in every Mosaic repository.
 - The empty-catalogue path in `assemble.sh` remains and must stay a clean no-op,
   even though nothing reaches it now.
 - When something is undecided, say so rather than inventing a convention that a
-  real module release then has to fight. The id/URL scheme *was* that live
+  real module release then has to fight. The id and URL scheme *was* that live
   example and is now settled: a module's binary URLs live in its own
-  `manifest.json` (it knows where it hosts its bytes; the registry never
-  computes a URL), and the catalogue names the *repository* to fetch that
-  manifest from — since a repo name does not follow from a module id — so the
-  registry only aggregates and signs — it computes no URLs.
+  `manifest.json` — it knows where it hosts its bytes — and the catalogue names
+  the *repository* to fetch that manifest from, since a repo name does not follow
+  from a module id. The registry aggregates and signs; it computes no URLs.
+
+<!-- shared-rules:begin -->
+<!-- shared-rules:end -->
+
+## Records and the gate, in this repository
+
+**This repository owns no decision records and has no `docs/adr/`.** That is
+correct rather than an omission: every decision it implements — the trust model,
+the distribution shape, who manages an installed module — is enforced by a
+mechanism in [`platform`](https://github.com/mosaic-media/platform), so the
+records live there. If a change here would change a recorded decision, the new
+record belongs in the repository holding the mechanism, and this one links to it.
+
+**There is no test container here, and nothing to run locally.** This repository
+is a YAML catalogue, a shell script and a workflow; its gate is `publish.yml`
+itself, which refuses rather than publishing something broken. So verification is
+by reading — `registry.yaml`, `scripts/assemble.sh`,
+`.github/workflows/publish.yml` — and by watching the run that a merge triggers.
+**Say which of those you actually read**, and never describe the published index
+from this repository's source: fetch it.
