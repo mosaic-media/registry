@@ -4,9 +4,8 @@
 # The publish workflow reads this, downloads each catalogued module's own
 # manifest — unsigned; the index signature over it is what authenticates the
 # manifest and the digests it carries — builds a signed index over them, and
-# deploys it to GitHub Pages. A
-# module appears to every Platform that trusts this repository the moment it
-# lands here and the index is republished.
+# deploys it to GitHub Pages. A module appears to every Platform that trusts this
+# repository the moment it lands here and the index is republished.
 
 repository:
   name: mosaic-official
@@ -21,14 +20,15 @@ repository:
 
 # The catalogue. Each entry names the GitHub repository (under mosaic-media) that
 # publishes the module and the release tag to catalogue; the registry fetches
-# that release's manifest.json and the manifest is authoritative for everything
+# that release's manifest.json, and the manifest is authoritative for everything
 # else — the module id, its roles, its binaries' URLs and digests. The repo is
 # named outright because it does not follow from the module id: the repository
 # module-stremio-addons publishes a module whose id is "stremio".
 #
 # A repo whose release publishes no manifest.json (a Go module tag alone) has no
 # binary to point at, and the workflow refuses rather than publishing a broken
-# index.
+# index. Adding or removing an entry is a hand edit; a dispatch only ever moves
+# a version on an entry that is already here.
 modules:
   - repo: module-stremio-addons
     version: v0.30.0

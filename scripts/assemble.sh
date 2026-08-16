@@ -2,22 +2,21 @@
 # Assemble the module index from registry.yaml (platform#40).
 #
 # The model is aggregation, not construction: each catalogued module publishes
-# its OWN manifest.json in its release — id, version, name, SDK major, roles and
-# its binaries' digests AND their download URLs, produced by the module's CI with
-# the Platform's modulesign tool. This script downloads those manifests and runs
-# build-index over them, so the registry never re-derives a module's properties,
-# re-hashes its bytes, or computes a URL. It adds nothing to a manifest; it only
-# aggregates and (in publish.yml) signs.
+# its own manifest.json in its release — id, version, name, SDK major, roles, and
+# its binaries' digests and their download URLs — produced by the module's CI
+# with the Platform's modulesign tool. This script downloads those manifests and
+# runs build-index over them, so the registry never re-derives a module's
+# properties, re-hashes its bytes, or computes a URL. It adds nothing to a
+# manifest; it only aggregates and (in publish.yml) signs.
 #
-# The one thing the catalogue must supply that a manifest cannot is *where to
-# fetch that manifest from*: a module's repository name is not its module id
+# The one thing the catalogue must supply that a manifest cannot is where to
+# fetch that manifest from: a module's repository name is not its module id
 # (module-stremio-addons publishes a module whose id is "stremio"), so the id
 # cannot locate the repo. Each entry therefore names its repository outright.
 #
-# The empty catalogue is a clean no-op rather than a failure. It is no longer the
-# expected state: all three extension modules ship out-of-process binaries and
-# are catalogued, so nothing reaches that branch today. It stays because a
-# catalogue emptied deliberately must publish an empty index rather than fail.
+# The empty catalogue is a clean no-op rather than a failure, and must stay one.
+# Nothing reaches that branch while the catalogue is populated, but a catalogue
+# emptied deliberately must publish an empty index rather than fail.
 set -euo pipefail
 
 python3 -m pip install --quiet pyyaml >/dev/null 2>&1 || true
@@ -41,11 +40,9 @@ if [ "${MODULE_COUNT:-0}" -eq 0 ]; then
 fi
 
 # ── Non-empty path ──────────────────────────────────────────────────────────
-# This is the live path — every publish takes it, since the catalogue has three
-# modules in it. It glues tools that are themselves tested (modulesign
-# build-index/sign-index), so the risk is confined to this orchestration; what
-# has no test of its own is the orchestration, and a publish is what exercises
-# it.
+# The live path, taken by every publish. It glues tools that are themselves
+# tested (modulesign build-index/sign-index); the orchestration below has no test
+# of its own, and a publish run is what exercises it.
 mkdir -p manifests out
 
 # Emit each module as "repo<TAB>version"; repo is the GitHub repository (under

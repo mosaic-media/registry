@@ -2,7 +2,7 @@ name: verify
 
 # This repository is a YAML catalogue, a shell script and a publish workflow, so
 # it has no test container and nothing to build. What it does have is citations
-# of decisions held in other repositories, and those can go stale silently: once
+# of decisions held in other repositories, and those go stale silently: once
 # every repository numbers its records from 1, a citation that does not name its
 # repository resolves to whichever record happens to share the number.
 #

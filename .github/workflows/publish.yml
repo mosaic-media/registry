@@ -5,12 +5,10 @@ name: publish
 #
 #   `bump` — a module's release.yml dispatches `module-released` once its
 #   binaries and manifest.json are uploaded, and this moves that module's version
-#   in registry.yaml by opening a pull request. Before it existed the catalogue
-#   was hand-curated, and hand-curation drifted silently: it sat three releases
-#   behind all three modules for two days, and nothing anywhere went red, because
-#   a stale catalogue publishes a perfectly valid index — it just offers a version
-#   nobody released today. Nothing else notices, which is why this is automated
-#   rather than remembered.
+#   in registry.yaml by opening a pull request. It is automated rather than
+#   remembered because a stale catalogue is invisible: it publishes a perfectly
+#   valid signed index that simply offers a version nobody released today, so
+#   nothing anywhere goes red.
 #
 #   `build-and-sign` + `deploy` — build the signed module index from
 #   registry.yaml and deploy it to GitHub Pages (platform#40). A Platform that
@@ -28,8 +26,7 @@ name: publish
 #      tag has no binary to point at, and the download step fails with that
 #      said plainly rather than emitting an index that lists an unreachable file.
 #
-# An empty catalogue remains a clean no-op rather than a failure, which is what
-# it was for as long as no module shipped out-of-process binaries.
+# An empty catalogue is a clean no-op rather than a failure.
 
 on:
   workflow_dispatch:
@@ -38,11 +35,10 @@ on:
   repository_dispatch:
     types: [module-released]
   # The merged bump is what republishes. The catalogue is the index's only input,
-  # so a change to it on main is exactly the event that dates the published
-  # index; without this the bump would land and the index would stay stale, which
-  # is the failure the bump exists to remove. workflow_dispatch stays for a
-  # republish with no catalogue change — a rotated key, a re-run after a failed
-  # deploy.
+  # so a change to it on main is the event that dates the published index;
+  # without this trigger the bump would land and the index would stay stale.
+  # workflow_dispatch stays for a republish with no catalogue change — a rotated
+  # key, a re-run after a failed deploy.
   push:
     branches: [main]
     paths: [registry.yaml]
@@ -77,11 +73,10 @@ jobs:
       # the configuration error it is rather than as a git failure. It is a
       # separate secret from the signing key and needs no access to it.
       #
-      # A PAT rather than the default github.token, for a reason particular to
-      # this repository: a merge performed by github.token raises no further
-      # workflow run, so the pull request would merge and the `push` trigger
-      # above would never fire — the catalogue would move and the published index
-      # would stay exactly as stale as before.
+      # It must be a PAT rather than the default github.token: a merge performed
+      # by github.token raises no further workflow run, so the pull request would
+      # merge and the `push` trigger above would never fire — the catalogue would
+      # move and the published index would stay exactly as stale as before.
       - name: Require the bump token
         env:
           TOKEN: ${{ secrets.CATALOGUE_BUMP_TOKEN }}
@@ -121,8 +116,9 @@ jobs:
           # This is the load-bearing one: the repository must ALREADY be in the
           # catalogue. It means a dispatch can only ever move an entry this
           # repository has taken deliberately, never add one — and adding a
-          # module to the official set is the trust decision the whole of ADR
-          # 0065 is about, since one key vouches for everything the index carries.
+          # module to the official set is the trust decision the whole of
+          # platform#40 is about, since one key vouches for everything the index
+          # carries.
           # A repository that could enrol itself by dispatch would make that
           # decision on its own behalf.
           python3 - <<'PY' > current.txt
@@ -160,13 +156,13 @@ jobs:
             echo "skip=true" >> "$GITHUB_ENV"
           fi
 
-      # assemble.sh makes this same check, but it makes it *after* a merge — so a
+      # assemble.sh makes this same check, but it makes it after a merge — so a
       # release whose assets never appeared would move the catalogue, and then
       # every publish from that moment on would fail until somebody edited
       # registry.yaml back. Checking here keeps the failure attached to the
-      # dispatch that caused it, and it is the check that catches the mistake
-      # this chain is most prone to: a module dispatching before its `binaries`
-      # job has uploaded anything.
+      # dispatch that caused it, and it catches the mistake this chain is most
+      # prone to: a module dispatching before its `binaries` job has uploaded
+      # anything.
       - name: Check the release publishes a manifest
         if: env.skip != 'true'
         run: |
@@ -218,8 +214,8 @@ jobs:
       # core-module-bump.yml gives: it leaves a record of which module release
       # moved which catalogue entry, which is most of the diagnosis the first
       # time a bump is wrong. Auto-merge keeps it from needing a person in the
-      # ordinary case, and leaves the seam where a check on the pull request
-      # would go if this repository ever grows one.
+      # ordinary case, and leaves the seam a check on the pull request would go
+      # into if this repository ever grows one.
       - name: Open the pull request
         if: env.skip != 'true'
         env:
@@ -263,8 +259,8 @@ jobs:
 
       # modulesign (build-index, sign-index, digest) lives in the platform repo
       # and depends on its internal packages, so it is built from a platform
-      # checkout. This is the documented interim until the manifest/index format
-      # is extracted to a public module.
+      # checkout rather than from anything here. This is the documented interim
+      # until the manifest/index format is extracted to a public module.
       - name: Check out platform for the signing tool
         uses: actions/checkout@v4
         with:
@@ -291,15 +287,20 @@ jobs:
             exit 1
           fi
 
-      # Assemble a manifest per catalogued module by downloading its binaries and
-      # digesting them, then build-index over them. Emits empty=true when the
-      # catalogue is empty, which is a clean no-op rather than a failure.
+      # Download each catalogued module's own manifest.json and build-index over
+      # them; the registry re-derives nothing and re-hashes no bytes. Emits
+      # empty=true when the catalogue is empty, which is a clean no-op rather
+      # than a failure.
       - name: Assemble the index
         id: assemble
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/assemble.sh
 
+      # The private key never lands in the repository: it is decoded from the
+      # secret under umask 077, and the decoded copy is removed immediately after
+      # sign-index has used it. Anything inserted between those two lines that
+      # can fail leaves signing.key on disk, since the step aborts on error.
       - name: Sign the index
         if: steps.assemble.outputs.empty != 'true'
         env:
